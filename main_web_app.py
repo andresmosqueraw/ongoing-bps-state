@@ -58,6 +58,8 @@ async def start_short_term_simulation(
     reachability_graph_with_events_path = process_folder / "reachability_graph_with_events.tgf"
     n_gram_index_with_events_path = process_folder / "n_gram_index_with_events.map"
 
+    start_time = pd.to_datetime(start_time).tz_localize(None)
+
     # Compute the initial frame and run short-term simulation
     frame, short_term_simulated_log_path = compute_bps_state_and_run_simulation(
         ongoing_log_path=ongoing_log_path,
@@ -66,6 +68,7 @@ async def start_short_term_simulation(
         start_time=start_time,
         simulation_horizon=simulation_horizon,
         short_term_simulated_log_path=short_term_simulated_log_path,
+        column_mapping=json.dumps(column_mapping),
     )
 
     with open(process_folder / "initial_frame.json", "w") as frame_file:
@@ -118,6 +121,8 @@ def resume_short_term_simulation(request: ResumeRequest, db: Session = Depends(g
     complete_reachability_graph_path = process_folder / "complete_reachability_graph.tgf"
     reachability_graph_with_events_path = process_folder / "reachability_graph_with_events.tgf"
     n_gram_index_with_events_path = process_folder / "n_gram_index_with_events.map"
+
+    # resume_timestamp = pd.to_datetime(request.timestamp).tz_localize(None)
 
     # Compute initial frame
     frame = compute_bps_resumed_state(

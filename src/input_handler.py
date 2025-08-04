@@ -66,25 +66,40 @@ class InputHandler:
         self.event_log_ids = self.get_event_log_ids()
     
     def parse_column_mapping(self):
-        """Parses the column mapping from a JSON string."""
-        if self.column_mapping_str:
+        """Parses column mapping for both backend-sanitized or raw frontend-style mappings."""
+
+        if isinstance(self.column_mapping_str, str):
             mapping = json.loads(self.column_mapping_str)
-            # Ensure all required standard names are present in the mapping values
-            required_standard_names = ['CaseId', 'Resource', 'Activity', 'StartTime', 'EndTime']
-            provided_standard_names = set(mapping.values())
-            for std_name in required_standard_names:
-                if std_name not in provided_standard_names:
-                    mapping[std_name] = std_name
-            return mapping
+        elif isinstance(self.column_mapping_str, dict):
+            mapping = self.column_mapping_str
         else:
-            # Use default mapping (columns are already named as standard names)
-            return {
-                'CaseId': 'CaseId',
-                'Resource': 'Resource',
-                'Activity': 'Activity',
-                'StartTime': 'StartTime',
-                'EndTime': 'EndTime'
-            }
+            raise TypeError("column_mapping must be a str or dict")
+
+        # If the keys are already standard names, assume backend-sanitized mapping
+        standard_keys = {'CaseId', 'Activity', 'Resource', 'StartTime', 'EndTime', 'enabled_time'}
+        if standard_keys.issubset(set(mapping.keys())):
+            return mapping  # Already sanitized
+
+        # Otherwise, assume raw frontend-style and sanitize
+        sanitized = {
+            "CaseId": mapping.get("case", "CaseId"),
+            "Activity": mapping.get("activity", "Activity"),
+            "Resource": mapping.get("resource", "Resource"),
+            "StartTime": mapping.get("start", "StartTime"),
+            "EndTime": mapping.get("end", "EndTime"),
+        }
+
+        # Optional: extract enablement
+        enablement = mapping.get("enablement")
+        if enablement and enablement != "__DISCOVER__":
+            sanitized["enabled_time"] = enablement
+        elif isinstance(mapping.get("attributes"), dict) and "enable_time" in mapping["attributes"]:
+            sanitized["enabled_time"] = mapping["attributes"]["enable_time"]
+        else:
+            sanitized["enabled_time"] = "enabled_time"
+
+        return sanitized
+
     
     def get_event_log_ids(self):
         """Returns the EventLogIDs instance with actual column names after mapping."""
@@ -109,33 +124,30 @@ class InputHandler:
         """Reads the event log CSV file into a DataFrame."""
         df = pd.read_csv(self.event_log_path)
 
-        # Apply column mapping to rename columns to standard names
-        df = df.rename(columns=self.column_mapping)
+        # Invert column mapping: actual column → standard name
+        rename_map = {v: k for k, v in self.column_mapping.items()}
+        df = df.rename(columns=rename_map)
 
-        # Validate required columns using standard names
+        # Validate required standard columns
         required_columns = ['CaseId', 'Resource', 'Activity', 'StartTime', 'EndTime']
         for col in required_columns:
             if col not in df.columns:
+                print("Parsed column mapping:", self.column_mapping)
+                print("DataFrame columns after renaming:", df.columns.tolist())
                 raise ValueError(f"Missing required column: {col}")
 
-        # Convert StartTime to string, ensure fractional seconds, then parse
+        # Convert StartTime
         df['StartTime'] = df['StartTime'].astype(str).apply(ensure_fractional_seconds)
-        df['StartTime'] = pd.to_datetime(
-            df['StartTime'],
-            utc=False,
-        )
+        df['StartTime'] = pd.to_datetime(df['StartTime'], utc=False)
 
-        # Convert EndTime to string, ensure fractional seconds, then parse
+        # Convert EndTime
         df['EndTime'] = df['EndTime'].astype(str).apply(ensure_fractional_seconds)
         missing_end = df['EndTime'].isna()
         if missing_end.any():
             print(f"There are {missing_end.sum()} rows with missing/invalid EndTime.")
-            print(df[missing_end].head()) 
-        df['EndTime'] = pd.to_datetime(
-            df['EndTime'],
-            utc=False,
-        )
-        
+            print(df[missing_end].head())
+        df['EndTime'] = pd.to_datetime(df['EndTime'], utc=False)
+
         return df
 
     def read_bpmn_model(self):

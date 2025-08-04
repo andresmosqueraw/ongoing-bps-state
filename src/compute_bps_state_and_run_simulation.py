@@ -1,6 +1,7 @@
 # runner.py
 
 import datetime
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -42,13 +43,21 @@ def compute_bps_state_and_run_simulation(
     if short_term_simulated_log_path is None:
         short_term_simulated_log_path = Path('./short_term_simulated_log.csv')
 
+
+    print(f"Column mapping used: {column_mapping}")
+    simulated_log_df = pd.read_csv(ongoing_log_path)
+    cleaned_column_mapping = parse_column_mapping(column_mapping)
+    print(f"Sanitized column mapping used: {cleaned_column_mapping}")
+
+    print("Columns in short-term simulation log:", simulated_log_df.columns.tolist())
+
     # Call to runner to compute state and run simulation
     bps_state, simulated_log_path = run_process_state_and_simulation(
         event_log=ongoing_log_path,
         bpmn_model=bpmn_model_path,
         bpmn_parameters=bpmn_parameters_path,
         start_time=start_time,
-        column_mapping=column_mapping,
+        column_mapping=cleaned_column_mapping,
         simulate=True,
         simulation_horizon=simulation_horizon,
         total_cases=20,  # default, irrelevant
@@ -189,3 +198,28 @@ def compute_bps_resumed_state(
         frame += [{'case_id': case_id, 'active_elements': active_elements}]
     # Return frame with tokens of ongoing cases
     return frame
+
+
+def parse_column_mapping(column_mapping_str: str) -> dict:
+    """Sanitizes and converts frontend-provided mapping into standard format expected by the backend."""
+    raw_mapping = json.loads(column_mapping_str)
+
+    # Extract core mappings
+    mapping = {
+        "CaseId": raw_mapping.get("case", "CaseId"),
+        "Activity": raw_mapping.get("activity", "Activity"),
+        "Resource": raw_mapping.get("resource", "Resource"),
+        "StartTime": raw_mapping.get("start", "StartTime"),
+        "EndTime": raw_mapping.get("end", "EndTime"),
+    }
+
+    # Optional: enablement timestamp (top-level or nested)
+    enablement = raw_mapping.get("enablement")
+    if enablement and enablement != "__DISCOVER__":
+        mapping["enabled_time"] = enablement
+    elif isinstance(raw_mapping.get("attributes"), dict) and "enable_time" in raw_mapping["attributes"]:
+        mapping["enabled_time"] = raw_mapping["attributes"]["enable_time"]
+    else:
+        mapping["enabled_time"] = "enabled_time"
+
+    return mapping

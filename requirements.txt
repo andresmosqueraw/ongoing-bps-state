@@ -1,7 +1,9 @@
 log-distance-measures==2.1.0
-pix-framework==0.13.17
+pix-framework==0.14.2
 ongoing-process-state==2.1.2
-git+https://github.com/AutomatedProcessImprovement/Prosimos@short-term-simulation
+# Prosimos se instala desde repo clonado en ./Prosimos (rama short-term-simulation)
+-e ../libraries-used/Prosimos
+#git+https://github.com/AutomatedProcessImprovement/Prosimos@2.0.6
 pandas==2.2.3
 numpy==1.26.4
 networkx==3.4.2
